@@ -131,7 +131,7 @@ ESCO_SKILLS: dict[str, list[str]] = {
     ],
 }
 
-SENIORITY_LEVELS = ["Junior", "Mid", "Senior", "Principal / Staff", "Lead / Architect"]
+SENIORITY_LEVELS = ["Analyst", "Specialist I", "Specialist II", "Expert I", "Expert II", "Director"]
 
 PROJECT_STATUS_OPTIONS = [
     "In offerta",
