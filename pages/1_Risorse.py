@@ -45,7 +45,7 @@ def _form_risorsa(prefill: dict | None = None):
                 for _, r in risorse_df.iterrows()
             }
             line_manager = st.selectbox(
-                "Line Manager", list(risorse_map.keys()))
+                "Line Manager", list(risorse_map.keys()), index=None)
 
             st.markdown("**Competenze ESCO**")
             selected_skills: list[str] = prefill.get("competenze", []) if prefill else []
