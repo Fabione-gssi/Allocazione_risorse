@@ -98,7 +98,13 @@ with tab1:
                 x_end="data_fine",
                 y="risorsa_nome",
                 color="nome_progetto",
-            st.dataframe(cat_df, use_container_width=True, hide_index=True)
+                hover_data=["percentuale_allocazione", "stato", "seniority"],
+                labels={"risorsa_nome": "Risorsa", "nome_progetto": "Progetto"},
+                title="Timeline Allocazioni",
+            )
+            fig2.update_yaxes(autorange="reversed")
+            fig2.update_layout(height=max(300, 50 * alloc_g["risorsa_nome"].nunique()))
+            st.plotly_chart(fig2, use_container_width=True)
 
 
 # ============================================================
