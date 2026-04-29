@@ -106,7 +106,7 @@ def get_risorse(only_active: bool = False) -> pd.DataFrame:
             rows = cur.fetchall()
     df = _rows_to_df(rows)
     if not df.empty:
-        df["competenze"] = df["competenze"].apply(
+        df["competenze"] = df["competenze"].apply()
 
 def get_risorsa(risorsa_id: int) -> dict | None:
     with _conn() as conn:
