@@ -93,6 +93,20 @@ def init_db() -> None:
                 """
             )
 
+            # indici unique necessari per ON CONFLICT nei bulk insert
+            cur.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_risorse_nome_cognome
+                ON risorse (nome, cognome);
+                """
+            )
+            cur.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_progetti_unique
+                ON progetti (nome_progetto, codice_interno, codice_esterno);
+                """
+            )
+
 
 # ---------------------------------------------------------------------------
 # Generic helpers
@@ -337,10 +351,9 @@ def delete_allocazione(allocazione_id: int) -> None:
 # ---------------------------------------------------------------------------
 
 def bulk_insert_risorse(df: pd.DataFrame) -> tuple[int, list[str]]:
-    """Bulk insert usando una singola connessione e savepoint per isolare gli errori riga per riga."""
+    """Upsert bulk: inserisce o sovrascrive se nome+cognome già esistono."""
     inserted, errors = 0, []
 
-    # validazione e preparazione anticipata dei parametri
     rows_to_insert: list[tuple] = []
     for i, row in df.iterrows():
         nome = str(row.get("nome", "") or "").strip()
@@ -361,7 +374,7 @@ def bulk_insert_risorse(df: pd.DataFrame) -> tuple[int, list[str]]:
         if "competenze" in row and pd.notna(row["competenze"]):
             competenze = [s.strip() for s in str(row["competenze"]).split(";") if s.strip()]
         rows_to_insert.append((
-            i + 2,  # numero riga originale per messaggi di errore
+            i + 2,  
             nome, cognome,
             str(row.get("seniority", "Mid") or "Mid").strip(),
             str(row.get("line_manager", "") or "").strip(),
@@ -381,7 +394,15 @@ def bulk_insert_risorse(df: pd.DataFrame) -> tuple[int, list[str]]:
                         """INSERT INTO risorse
                            (nome, cognome, seniority, line_manager, competenze,
                             costo_giornaliero, costo_marginato, attivo)
-                           VALUES (%s,%s,%s,%s,%s,%s,%s,1)""",
+                           VALUES (%s,%s,%s,%s,%s,%s,%s,1)
+                           ON CONFLICT (nome, cognome) DO UPDATE SET
+                               seniority         = EXCLUDED.seniority,
+                               line_manager      = EXCLUDED.line_manager,
+                               competenze        = EXCLUDED.competenze,
+                               costo_giornaliero = EXCLUDED.costo_giornaliero,
+                               costo_marginato   = EXCLUDED.costo_marginato,
+                               attivo            = EXCLUDED.attivo,
+                               updated_at        = NOW()""",
                         (nome, cognome, seniority, line_manager, competenze, costo_g, costo_m),
                     )
                     cur.execute("RELEASE SAVEPOINT bulk_row")
@@ -395,7 +416,7 @@ def bulk_insert_risorse(df: pd.DataFrame) -> tuple[int, list[str]]:
 
 
 def bulk_insert_progetti(df: pd.DataFrame) -> tuple[int, list[str]]:
-    """Bulk insert usando una singola connessione e savepoint per isolare gli errori riga per riga."""
+    """Upsert bulk: inserisce o sovrascrive se nome_progetto+codice_interno+codice_esterno già esistono."""
     inserted, errors = 0, []
 
     rows_to_insert: list[tuple] = []
@@ -430,7 +451,15 @@ def bulk_insert_progetti(df: pd.DataFrame) -> tuple[int, list[str]]:
                            (codice_esterno, codice_interno, nome_progetto,
                             referente_interno, referente_esterno,
                             data_inizio, data_fine_prevista, stato, note)
-                           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                           ON CONFLICT (nome_progetto, codice_interno, codice_esterno) DO UPDATE SET
+                               referente_interno  = EXCLUDED.referente_interno,
+                               referente_esterno  = EXCLUDED.referente_esterno,
+                               data_inizio        = EXCLUDED.data_inizio,
+                               data_fine_prevista = EXCLUDED.data_fine_prevista,
+                               stato              = EXCLUDED.stato,
+                               note               = EXCLUDED.note,
+                               updated_at         = NOW()""",
                         (cod_est, cod_int, nome, ref_int, ref_est, d_inizio, d_fine, stato, note),
                     )
                     cur.execute("RELEASE SAVEPOINT bulk_row")
