@@ -4,15 +4,14 @@ import contextlib
 import json
 
 import pandas as pd
-
 import psycopg2
 import psycopg2.extras
 import streamlit as st
 
+
 # ---------------------------------------------------------------------------
 # Connection
 # ---------------------------------------------------------------------------
-
 
 @contextlib.contextmanager
 def _conn():
@@ -20,6 +19,8 @@ def _conn():
     conn = psycopg2.connect(
         st.secrets["supabase"]["connection_string"],
         cursor_factory=psycopg2.extras.RealDictCursor,
+        connect_timeout=10,
+        sslmode="require",
     )
     try:
         yield conn
@@ -94,6 +95,18 @@ def init_db() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Generic helpers
+# ---------------------------------------------------------------------------
+
+def _rows_to_df(rows) -> pd.DataFrame:
+    if not rows:
+        return pd.DataFrame()
+    return pd.DataFrame([dict(r) for r in rows])
+
+
+# ---------------------------------------------------------------------------
+# Risorse
+# ---------------------------------------------------------------------------
 
 def get_risorse(only_active: bool = False) -> pd.DataFrame:
     with _conn() as conn:
@@ -106,7 +119,11 @@ def get_risorse(only_active: bool = False) -> pd.DataFrame:
             rows = cur.fetchall()
     df = _rows_to_df(rows)
     if not df.empty:
-        df["competenze"] = df["competenze"].apply()
+        df["competenze"] = df["competenze"].apply(
+            lambda x: json.loads(x) if isinstance(x, str) else (x or [])
+        )
+    return df
+
 
 def get_risorsa(risorsa_id: int) -> dict | None:
     with _conn() as conn:
@@ -116,6 +133,10 @@ def get_risorsa(risorsa_id: int) -> dict | None:
     if row is None:
         return None
     d = dict(row)
+    d["competenze"] = json.loads(d["competenze"]) if isinstance(d["competenze"], str) else []
+    return d
+
+
 def upsert_risorsa(data: dict) -> int:
     competenze = json.dumps(data.get("competenze", []))
     with _conn() as conn:
@@ -157,6 +178,8 @@ def delete_risorsa(risorsa_id: int) -> None:
             cur.execute("DELETE FROM risorse WHERE id = %s", (risorsa_id,))
 
 
+# ---------------------------------------------------------------------------
+# Progetti
 # ---------------------------------------------------------------------------
 
 def get_progetti() -> pd.DataFrame:
@@ -222,6 +245,8 @@ def delete_progetto(progetto_id: int) -> None:
             cur.execute("DELETE FROM progetti WHERE id = %s", (progetto_id,))
 
 
+# ---------------------------------------------------------------------------
+# Allocazioni
 # ---------------------------------------------------------------------------
 
 def get_allocazioni() -> pd.DataFrame:
@@ -308,6 +333,8 @@ def delete_allocazione(allocazione_id: int) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Bulk import helpers
+# ---------------------------------------------------------------------------
 
 def bulk_insert_risorse(df: pd.DataFrame) -> tuple[int, list[str]]:
     """Bulk insert usando una singola connessione e savepoint per isolare gli errori riga per riga."""
@@ -367,6 +394,50 @@ def bulk_insert_risorse(df: pd.DataFrame) -> tuple[int, list[str]]:
     return inserted, errors
 
 
+def bulk_insert_progetti(df: pd.DataFrame) -> tuple[int, list[str]]:
+    """Bulk insert usando una singola connessione e savepoint per isolare gli errori riga per riga."""
+    inserted, errors = 0, []
 
+    rows_to_insert: list[tuple] = []
+    for i, row in df.iterrows():
+        nome_progetto = str(row.get("nome_progetto", "") or "").strip()
+        if not nome_progetto or nome_progetto == "nan":
+            errors.append(f"Riga {i + 2}: campo 'nome_progetto' obbligatorio mancante")
+            continue
+        rows_to_insert.append((
+            i + 2,
+            str(row.get("codice_esterno", "") or "").strip(),
+            str(row.get("codice_interno", "") or "").strip(),
+            nome_progetto,
+            str(row.get("referente_interno", "") or "").strip(),
+            str(row.get("referente_esterno", "") or "").strip(),
+            str(row.get("data_inizio", "") or "").strip(),
+            str(row.get("data_fine_prevista", "") or "").strip(),
+            str(row.get("stato", "In corso") or "In corso").strip(),
+            str(row.get("note", "") or "").strip(),
+        ))
 
-        
+    if not rows_to_insert:
+        return 0, errors
+
+    with _conn() as conn:
+        with conn.cursor() as cur:
+            for row_num, cod_est, cod_int, nome, ref_int, ref_est, d_inizio, d_fine, stato, note in rows_to_insert:
+                try:
+                    cur.execute("SAVEPOINT bulk_row")
+                    cur.execute(
+                        """INSERT INTO progetti
+                           (codice_esterno, codice_interno, nome_progetto,
+                            referente_interno, referente_esterno,
+                            data_inizio, data_fine_prevista, stato, note)
+                           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                        (cod_est, cod_int, nome, ref_int, ref_est, d_inizio, d_fine, stato, note),
+                    )
+                    cur.execute("RELEASE SAVEPOINT bulk_row")
+                    inserted += 1
+                except Exception as exc:
+                    cur.execute("ROLLBACK TO SAVEPOINT bulk_row")
+                    cur.execute("RELEASE SAVEPOINT bulk_row")
+                    errors.append(f"Riga {row_num}: {exc}")
+
+    return inserted, errors
