@@ -6,7 +6,7 @@ import pandas as pd
 import streamlit as st
 
 import database as db
-from db import init_db
+from database import init_db
 from esco_skills import ESCO_SKILLS, SENIORITY_LEVELS, all_skills_flat
 
 init_db()
