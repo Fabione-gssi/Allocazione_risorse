@@ -38,9 +38,14 @@ def _form_risorsa(prefill: dict | None = None):
                 if prefill and prefill.get("seniority") in SENIORITY_LEVELS
                 else 1,
             )
-            line_manager = st.text_input(
-                "Line Manager", value=prefill.get("line_manager", "") if prefill else ""
-            )
+            
+            risorse_df = db.get_risorse(only_active=True)
+            risorse_map = {
+                f"{r['cognome']} {r['nome']} (ID {r['id']})": r["id"]
+                for _, r in risorse_df.iterrows()
+            }
+            line_manager = st.selectbox(
+                "Line Manager", list(risorse_map.keys()))
 
             st.markdown("**Competenze ESCO**")
             selected_skills: list[str] = prefill.get("competenze", []) if prefill else []
