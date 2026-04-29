@@ -1,5 +1,8 @@
 """Pagina anagrafica risorse."""
 
+import json
+
+import pandas as pd
 import streamlit as st
 
 import database as db
@@ -11,142 +14,89 @@ init_db()
 st.set_page_config(page_title="Risorse", page_icon="👤", layout="wide")
 st.title("👤 Anagrafica Risorse")
 
-
-# ── helpers ───────────────────────────────────────────────────────────────────
-
-def _clear_form_state():
-    """Rimuove dal session state tutti i valori pre-caricati del form."""
-    st.session_state.pop("edit_risorsa_id", None)
-    st.session_state.pop("_prefill_loaded_id", None)
-    for category in ESCO_SKILLS:
-        st.session_state.pop(f"skill_{category}", None)
-    for key in ("f_nome", "f_cognome", "f_seniority", "f_line_manager",
-                "f_costo_std", "f_costo_marg", "f_attivo"):
-        st.session_state.pop(key, None)
-
+# ── helpers ──────────────────────────────────────────────────────────────────
 
 def _refresh():
-    _clear_form_state()
+    st.session_state.pop("edit_risorsa_id", None)
     st.rerun()
-
-
-def _prefill_session_state(risorsa: dict):
-    """Scrive i valori della risorsa nel session state prima del render del form."""
-    if st.session_state.get("_prefill_loaded_id") == risorsa["id"]:
-        return  # già caricato, non sovrascrivere le modifiche dell'utente
-    competenze = risorsa.get("competenze") or []
-    for category, skills in ESCO_SKILLS.items():
-        st.session_state[f"skill_{category}"] = [s for s in competenze if s in skills]
-    st.session_state["f_nome"] = risorsa.get("nome", "")
-    st.session_state["f_cognome"] = risorsa.get("cognome", "")
-    st.session_state["f_seniority"] = risorsa.get("seniority", SENIORITY_LEVELS[1])
-    st.session_state["f_line_manager"] = risorsa.get("line_manager", "")
-    st.session_state["f_costo_std"] = float(risorsa.get("costo_giornaliero", 0) or 0)
-    st.session_state["f_costo_marg"] = float(risorsa.get("costo_marginato", 0) or 0)
-    st.session_state["f_attivo"] = bool(risorsa.get("attivo", 1))
-    st.session_state["_prefill_loaded_id"] = risorsa["id"]
 
 
 # ── sidebar: form nuovo / modifica ───────────────────────────────────────────
 
 def _form_risorsa(prefill: dict | None = None):
     is_edit = prefill is not None and prefill.get("id")
-
-    if is_edit:
-        _prefill_session_state(prefill)
-
-    # lista line manager esistenti per la selectbox
-    risorse_all = db.get_risorse()
-    lm_options = [""] + sorted(
-        {r for r in risorse_all["nome"] + " " + risorse_all["cognome"]}
-        if not risorse_all.empty else []
-    )
-    # se il line manager attuale non è nella lista (testo libero storico), aggiungilo
-    current_lm = st.session_state.get("f_line_manager", "")
-    if current_lm and current_lm not in lm_options:
-        lm_options.insert(1, current_lm)
-
+    title = "✏️ Modifica risorsa" if is_edit else "➕ Nuova risorsa"
     with st.sidebar:
-        st.subheader("✏️ Modifica risorsa" if is_edit else "➕ Nuova risorsa")
-        with st.form("form_risorsa", clear_on_submit=False):
-            nome = st.text_input(
-                "Nome *",
-                key="f_nome",
-                value="" if not is_edit else st.session_state.get("f_nome", ""),
-            )
-            cognome = st.text_input(
-                "Cognome *",
-                key="f_cognome",
-                value="" if not is_edit else st.session_state.get("f_cognome", ""),
-            )
-
-            seniority_idx = 1
-            cur_seniority = st.session_state.get("f_seniority", SENIORITY_LEVELS[1])
-            if cur_seniority in SENIORITY_LEVELS:
-                seniority_idx = SENIORITY_LEVELS.index(cur_seniority)
+        st.subheader(title)
+        with st.form("form_risorsa", clear_on_submit=True):
+            nome = st.text_input("Nome *", value=prefill.get("nome", "") if prefill else "")
+            cognome = st.text_input("Cognome *", value=prefill.get("cognome", "") if prefill else "")
             seniority = st.selectbox(
                 "Seniority *",
                 SENIORITY_LEVELS,
-                index=seniority_idx,
-                key="f_seniority",
+                index=SENIORITY_LEVELS.index(prefill["seniority"])
+                if prefill and prefill.get("seniority") in SENIORITY_LEVELS
+                else 1,
             )
-
-            lm_idx = lm_options.index(current_lm) if current_lm in lm_options else 0
+            
+            risorse_df = db.get_risorse(only_active=True)
+            risorse_map = {
+                f"{r['cognome']} {r['nome']} (ID {r['id']})": r["id"]
+                for _, r in risorse_df.iterrows()
+            }
             line_manager = st.selectbox(
-                "Line Manager",
-                lm_options,
-                index=lm_idx,
-                key="f_line_manager",
-            )
+                "Line Manager", list(risorse_map.keys()), index=None)
 
             st.markdown("**Competenze ESCO**")
+            selected_skills: list[str] = prefill.get("competenze", []) if prefill else []
             for category, skills in ESCO_SKILLS.items():
-                st.multiselect(
+                chosen = st.multiselect(
                     category,
                     options=skills,
+                    default=[s for s in selected_skills if s in skills],
                     key=f"skill_{category}",
                 )
+                for s in chosen:
+                    if s not in selected_skills:
+                        selected_skills.append(s)
 
             costo_std = st.number_input(
                 "Costo giornaliero standard (€)",
                 min_value=0.0,
                 step=50.0,
-                value=st.session_state.get("f_costo_std", 0.0) if is_edit else 0.0,
-                key="f_costo_std",
+                value=float(prefill.get("costo_giornaliero", 0)) if prefill else 0.0,
             )
             costo_marg = st.number_input(
                 "Costo giornaliero marginato (€)",
                 min_value=0.0,
                 step=50.0,
-                value=st.session_state.get("f_costo_marg", 0.0) if is_edit else 0.0,
-                key="f_costo_marg",
+                value=float(prefill.get("costo_marginato", 0)) if prefill else 0.0,
             )
             attivo = st.checkbox(
                 "Risorsa attiva",
-                value=st.session_state.get("f_attivo", True) if is_edit else True,
-                key="f_attivo",
+                value=bool(prefill.get("attivo", 1)) if prefill else True,
             )
 
             submitted = st.form_submit_button("💾 Salva")
             if submitted:
-                nome_val = st.session_state.get("f_nome", "").strip()
-                cognome_val = st.session_state.get("f_cognome", "").strip()
-                if not nome_val or not cognome_val:
+                if not nome.strip() or not cognome.strip():
                     st.error("Nome e Cognome sono obbligatori.")
                 else:
+                    # collect all selected skills across categories
                     all_sel: list[str] = []
-                    for cat in ESCO_SKILLS:
-                        all_sel.extend(st.session_state.get(f"skill_{cat}", []))
+                    for cat, skills in ESCO_SKILLS.items():
+                        key = f"skill_{cat}"
+                        all_sel.extend(st.session_state.get(key, []))
 
                     record = {
-                        "nome": nome_val,
-                        "cognome": cognome_val,
-                        "seniority": st.session_state.get("f_seniority", SENIORITY_LEVELS[1]),
-                        "line_manager": st.session_state.get("f_line_manager", ""),
+                        "nome": nome.strip(),
+                        "cognome": cognome.strip(),
+                        "seniority": seniority,
+                        "line_manager": line_manager.strip(),
                         "competenze": list(dict.fromkeys(all_sel)),
-                        "costo_giornaliero": st.session_state.get("f_costo_std", 0.0),
-                        "costo_marginato": st.session_state.get("f_costo_marg", 0.0),
-                        "attivo": int(st.session_state.get("f_attivo", True)),
+                        "costo_giornaliero": costo_std,
+                        "costo_marginato": costo_marg,
+                        "attivo": int(attivo),
                     }
                     if is_edit:
                         record["id"] = prefill["id"]
@@ -159,25 +109,19 @@ def _form_risorsa(prefill: dict | None = None):
                 db.delete_risorsa(prefill["id"])
                 st.success("Risorsa eliminata.")
                 _refresh()
-            if st.button("✖ Annulla"):
-                _refresh()
+        if is_edit and st.button("✖ Annulla"):
+            _refresh()
 
 
 # ── decide quale form mostrare ────────────────────────────────────────────────
 
 edit_id = st.session_state.get("edit_risorsa_id")
 if edit_id:
-    risorsa = db.get_risorsa(int(edit_id))
-    if risorsa:
-        _form_risorsa(risorsa)
-    else:
-        st.warning(f"Risorsa ID {edit_id} non trovata.")
-        _clear_form_state()
-        _form_risorsa()
+    _form_risorsa(db.get_risorsa(edit_id))
 else:
     _form_risorsa()
 
-# ── filtri ────────────────────────────────────────────────────────────────────
+# ── filtri ───────────────────────────────────────────────────────────────────
 
 col_f1, col_f2, col_f3 = st.columns([2, 2, 2])
 with col_f1:
@@ -201,30 +145,38 @@ if not risorse.empty:
     if filter_seniority:
         risorse = risorse[risorse["seniority"].isin(filter_seniority)]
     if filter_skill != "— tutte —":
-        risorse = risorse[risorse["competenze"].apply(lambda c: filter_skill in c)]
+        risorse = risorse[
+            risorse["competenze"].apply(lambda c: filter_skill in c)
+        ]
 
     display = risorse.copy()
     display["competenze"] = display["competenze"].apply(lambda c: ", ".join(c))
     display["attivo"] = display["attivo"].map({1: "✅", 0: "❌"})
-    display = display.rename(columns={
-        "id": "ID", "nome": "Nome", "cognome": "Cognome",
-        "seniority": "Seniority", "line_manager": "Line Manager",
-        "competenze": "Competenze", "costo_giornaliero": "Costo std (€/g)",
-        "costo_marginato": "Costo marg (€/g)", "attivo": "Attivo",
-    })
-    st.dataframe(
-        display[["ID","Nome","Cognome","Seniority","Line Manager",
-                 "Competenze","Costo std (€/g)","Costo marg (€/g)","Attivo"]],
-        use_container_width=True, hide_index=True,
+    display = display.rename(
+        columns={
+            "id": "ID",
+            "nome": "Nome",
+            "cognome": "Cognome",
+            "seniority": "Seniority",
+            "line_manager": "Line Manager",
+            "competenze": "Competenze",
+            "costo_giornaliero": "Costo std (€/g)",
+            "costo_marginato": "Costo marg (€/g)",
+            "attivo": "Attivo",
+        }
     )
+    show_cols = [
+        "ID", "Nome", "Cognome", "Seniority", "Line Manager",
+        "Competenze", "Costo std (€/g)", "Costo marg (€/g)", "Attivo",
+    ]
+    st.dataframe(display[show_cols], use_container_width=True, hide_index=True)
 
     st.markdown("---")
     st.subheader("Modifica / Elimina")
-    sel_id = st.number_input("Inserisci ID risorsa da modificare", min_value=1, step=1, value=1)
+    sel_id = st.number_input(
+        "Inserisci ID risorsa da modificare", min_value=1, step=1, value=1
+    )
     if st.button("✏️ Carica risorsa selezionata"):
-        # pulisce il prefill precedente e imposta il nuovo ID → il prossimo render
-        # chiamerà _prefill_session_state che scrive tutti i valori nelle chiavi giuste
-        st.session_state.pop("_prefill_loaded_id", None)
         st.session_state["edit_risorsa_id"] = int(sel_id)
         st.rerun()
 else:
