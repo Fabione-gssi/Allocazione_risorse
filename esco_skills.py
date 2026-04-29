@@ -98,3 +98,59 @@ ESCO_SKILLS: dict[str, list[str]] = {
         "Design system",
         "Usability testing",
     ],
+    "Project & Product Management": [
+        "Project management",
+        "Agile / Scrum",
+        "Kanban",
+        "Product management",
+        "Gestione del rischio",
+        "Gestione del budget di progetto",
+        "Pianificazione delle risorse",
+        "Stakeholder management",
+        "OKR / KPI",
+        "PRINCE2",
+        "PMP",
+    ],
+    "Analisi & Architettura": [
+        "Analisi dei requisiti",
+        "Business analysis",
+        "Modellazione dei processi (BPMN)",
+        "Architettura enterprise",
+        "Architettura a microservizi",
+        "Architettura cloud-native",
+        "Analisi funzionale",
+    ],
+    "Soft Skills": [
+        "Leadership tecnica",
+        "Comunicazione tecnica",
+        "Mentoring / Coaching",
+        "Risoluzione dei problemi",
+        "Lavoro in team",
+        "Gestione del tempo",
+        "Presentazione a stakeholder",
+    ],
+}
+
+SENIORITY_LEVELS = ["Junior", "Mid", "Senior", "Principal / Staff", "Lead / Architect"]
+
+PROJECT_STATUS_OPTIONS = [
+    "In offerta",
+    "In corso",
+    "In pausa",
+    "Completato",
+    "Cancellato",
+]
+
+ALLOCATION_STATUS_OPTIONS = [
+    "Confermata",
+    "Proposta",
+    "In revisione",
+    "Terminata",
+]
+
+
+def all_skills_flat() -> list[str]:
+    skills = []
+    for category_skills in ESCO_SKILLS.values():
+        skills.extend(category_skills)
+    return sorted(set(skills))
