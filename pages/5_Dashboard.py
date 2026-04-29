@@ -2,6 +2,9 @@
 
 from datetime import date, timedelta
 
+import io
+import numpy as np
+
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -41,9 +44,9 @@ if not alloc_df.empty:
 
 # ── tab layout ────────────────────────────────────────────────────────────────
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs(
-    ["📅 Gantt Progetti", "👥 Disponibilità Mensile", "🧩 Copertura Competenze", "💶 Costi", "📊 Riepilogo Allocazioni"]
-)
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
+    ["📅 Gantt Progetti", "👥 Disponibilità Mensile", "🧩 Copertura Competenze",
+     "💶 Costi", "📊 Riepilogo Allocazioni", "📆 Dettaglio Mensile"])
 
 # ============================================================
 # TAB 1 – GANTT PROGETTI
@@ -354,3 +357,170 @@ with tab5:
             fill_value=0,
         )
         st.dataframe(pivot.style.background_gradient(cmap="YlOrRd"), use_container_width=True)
+
+
+# ============================================================
+# TAB 6 – DETTAGLIO MENSILE RISORSE × PROGETTI
+# ============================================================
+with tab6:
+    st.subheader("Dettaglio mensile: giornate e costi per risorsa e progetto")
+
+    if alloc_df.empty:
+        st.info("Nessuna allocazione disponibile.")
+    else:
+        # ── scelta periodo ────────────────────────────────────────────────────
+        col_p1, col_p2 = st.columns(2)
+        with col_p1:
+            det_start = st.date_input(
+                "Dal",
+                value=date.today().replace(day=1),
+                key="det_start",
+            )
+        with col_p2:
+            det_end = st.date_input(
+                "Al",
+                value=(date.today().replace(day=1) + timedelta(days=365)),
+                key="det_end",
+            )
+
+        if det_end < det_start:
+            st.error("La data fine deve essere successiva alla data inizio.")
+            st.stop()
+
+        # ── genera lista mesi nel periodo ────────────────────────────────────
+        def _month_bounds(d: date):
+            """Restituisce (primo giorno, ultimo giorno) del mese di d."""
+            first = d.replace(day=1)
+            if first.month == 12:
+                last = first.replace(year=first.year + 1, month=1) - timedelta(days=1)
+            else:
+                last = first.replace(month=first.month + 1) - timedelta(days=1)
+            return first, last
+
+        months: list[tuple[date, date]] = []
+        cur = det_start.replace(day=1)
+        while cur <= det_end:
+            first, last = _month_bounds(cur)
+            months.append((first, last))
+            cur = last + timedelta(days=1)
+
+        # ── funzione calcolo gg lavorativi allocati su un mese ───────────────
+        def _overlap_gg(a_start: date, a_end: date,
+                         m_start: date, m_end: date, fte: float) -> float:
+            """Giorni lavorativi allocati (lun-ven × FTE%) nell'overlap mese/allocazione."""
+            ov_start = max(a_start, m_start)
+            ov_end   = min(a_end,   m_end)
+            if ov_start > ov_end:
+                return 0.0
+            wd = int(np.busday_count(ov_start, ov_end + timedelta(days=1)))
+            return round(wd * fte / 100, 2)
+
+        # ── merge per ottenere referenti dai progetti ────────────────────────
+        proj_details = db.get_progetti()[
+            ["id", "referente_interno", "referente_esterno"]
+        ].rename(columns={"id": "progetto_id"})
+
+        alloc_ext = alloc_df.copy()
+        alloc_ext["data_inizio_d"] = pd.to_datetime(
+            alloc_ext["data_inizio"], errors="coerce"
+        ).dt.date
+        alloc_ext["data_fine_d"] = pd.to_datetime(
+            alloc_ext["data_fine"], errors="coerce"
+        ).dt.date
+        alloc_ext = alloc_ext.dropna(subset=["data_inizio_d", "data_fine_d"])
+        alloc_ext = alloc_ext.merge(proj_details, on="progetto_id", how="left")
+
+        # ── costruzione tabella ───────────────────────────────────────────────
+        table_rows = []
+        grouped = alloc_ext.groupby(
+            ["risorsa_id", "progetto_id",
+             "risorsa_nome", "nome_progetto",
+             "referente_interno", "referente_esterno",
+             "costo_giornaliero", "costo_marginato"],
+            dropna=False,
+        )
+
+        for keys, group in grouped:
+            (_, _, risorsa_nome, nome_progetto,
+             ref_int, ref_est, costo_std, costo_marg) = keys
+
+            row: dict = {
+                "Risorsa":        risorsa_nome,
+                "Progetto":       nome_progetto,
+                "Ref. Interno":   ref_int or "",
+                "Ref. Esterno":   ref_est or "",
+                "Costo std (€/g)":  float(costo_std or 0),
+                "Costo marg (€/g)": float(costo_marg or 0),
+            }
+
+            tot_gg = 0.0
+            tot_costo = 0.0
+            for m_start, m_end in months:
+                label = m_start.strftime("%Y-%m")
+                gg_mese = sum(
+                    _overlap_gg(
+                        a["data_inizio_d"], a["data_fine_d"],
+                        m_start, m_end,
+                        float(a["percentuale_allocazione"]),
+                    )
+                    for _, a in group.iterrows()
+                )
+                costo_mese = round(gg_mese * float(costo_marg or 0), 0)
+                row[f"{label} Gg"]    = gg_mese if gg_mese > 0 else ""
+                row[f"{label} €Marg"] = int(costo_mese) if costo_mese > 0 else ""
+                tot_gg    += gg_mese
+                tot_costo += costo_mese
+
+            row["TOT Gg"]    = round(tot_gg, 1)
+            row["TOT €Marg"] = int(tot_costo)
+            table_rows.append(row)
+
+        if not table_rows:
+            st.info("Nessuna allocazione nel periodo selezionato.")
+        else:
+            det_df = pd.DataFrame(table_rows)
+
+            # ordina per risorsa poi progetto
+            det_df = det_df.sort_values(["Risorsa", "Progetto"]).reset_index(drop=True)
+
+            st.markdown(
+                f"**{len(det_df)} righe** · periodo **{det_start.strftime('%b %Y')} "
+                f"→ {det_end.strftime('%b %Y')}** "
+                f"({len(months)} mesi)"
+            )
+
+            # highlight colonne totali
+            def _highlight_tot(s):
+                return ["background-color: #e8f4e8; font-weight: bold"
+                        if c.startswith("TOT") else "" for c in s.index]
+
+            st.dataframe(
+                det_df.style.apply(_highlight_tot, axis=1),
+                use_container_width=True,
+                hide_index=True,
+                height=min(600, 40 + 36 * len(det_df)),
+            )
+
+            # ── download Excel ────────────────────────────────────────────────
+            buf = io.BytesIO()
+            with pd.ExcelWriter(buf, engine="xlsxwriter") as wr:
+                det_df.to_excel(wr, sheet_name="Dettaglio Mensile", index=False)
+                ws = wr.sheets["Dettaglio Mensile"]
+                wb = wr.book
+                hdr_fmt = wb.add_format(
+                    {"bold": True, "bg_color": "#1e3a5f", "font_color": "white", "border": 1}
+                )
+                tot_fmt = wb.add_format({"bold": True, "bg_color": "#c8e6c9"})
+                for col_num, col_name in enumerate(det_df.columns):
+                    ws.write(0, col_num, col_name, hdr_fmt)
+                    width = max(len(str(col_name)) + 2,
+                                det_df[col_name].astype(str).str.len().max() + 2)
+                    fmt = tot_fmt if str(col_name).startswith("TOT") else None
+                    ws.set_column(col_num, col_num, min(width, 20), fmt)
+            buf.seek(0)
+            st.download_button(
+                "⬇️ Scarica Excel dettaglio mensile",
+                buf,
+                f"dettaglio_mensile_{det_start}_{det_end}.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
