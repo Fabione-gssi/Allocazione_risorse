@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+*.pyo
+allocazioni.db
+*.db
+.env
