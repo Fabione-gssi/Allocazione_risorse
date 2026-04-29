@@ -49,9 +49,14 @@ def _form_progetto(prefill: dict | None = None):
                     "Codice esterno",
                     value=prefill.get("codice_esterno", "") if prefill else "",
                 )
-            referente_interno = st.text_input(
+            risorse_df = db.get_risorse(only_active=True)
+            risorse_map = {
+                f"{r['cognome']} {r['nome']} (ID {r['id']})": r["id"]
+                for _, r in risorse_df.iterrows()
+            }
+            referente_interno = st.selectbox(
                 "Referente interno",
-                value=prefill.get("referente_interno", "") if prefill else "",
+                list(risorse_map.keys())
             )
             referente_esterno = st.text_input(
                 "Referente esterno",
