@@ -308,20 +308,63 @@ def delete_allocazione(allocazione_id: int) -> None:
 
 
 # ---------------------------------------------------------------------------
-# ---------------------------------------------------------------------------
 
 def bulk_insert_risorse(df: pd.DataFrame) -> tuple[int, list[str]]:
+    """Bulk insert usando una singola connessione e savepoint per isolare gli errori riga per riga."""
     inserted, errors = 0, []
+
+    # validazione e preparazione anticipata dei parametri
+    rows_to_insert: list[tuple] = []
     for i, row in df.iterrows():
+        nome = str(row.get("nome", "") or "").strip()
+        cognome = str(row.get("cognome", "") or "").strip()
+        if not nome or nome == "nan":
+            errors.append(f"Riga {i + 2}: campo 'nome' obbligatorio mancante")
+            continue
+        if not cognome or cognome == "nan":
+            errors.append(f"Riga {i + 2}: campo 'cognome' obbligatorio mancante")
+            continue
         try:
-            competenze = []
-            if "competenze" in row and pd.notna(row["competenze"]):
-                competenze = [s.strip() for s in str(row["competenze"]).split(";") if s.strip()]
-            upsert_risorsa(
-                {
-                    "nome": str(row.get("nome", "")).strip(),
+            costo_g = float(row.get("costo_giornaliero", 0) or 0)
+            costo_m = float(row.get("costo_marginato", 0) or 0)
+        except (ValueError, TypeError):
+            errors.append(f"Riga {i + 2}: valori di costo non numerici")
+            continue
+        competenze: list[str] = []
+        if "competenze" in row and pd.notna(row["competenze"]):
+            competenze = [s.strip() for s in str(row["competenze"]).split(";") if s.strip()]
+        rows_to_insert.append((
+            i + 2,  # numero riga originale per messaggi di errore
+            nome, cognome,
+            str(row.get("seniority", "Mid") or "Mid").strip(),
+            str(row.get("line_manager", "") or "").strip(),
+            json.dumps(competenze),
+            costo_g, costo_m,
+        ))
 
+    if not rows_to_insert:
+        return 0, errors
 
+    with _conn() as conn:
+        with conn.cursor() as cur:
+            for row_num, nome, cognome, seniority, line_manager, competenze, costo_g, costo_m in rows_to_insert:
+                try:
+                    cur.execute("SAVEPOINT bulk_row")
+                    cur.execute(
+                        """INSERT INTO risorse
+                           (nome, cognome, seniority, line_manager, competenze,
+                            costo_giornaliero, costo_marginato, attivo)
+                           VALUES (%s,%s,%s,%s,%s,%s,%s,1)""",
+                        (nome, cognome, seniority, line_manager, competenze, costo_g, costo_m),
+                    )
+                    cur.execute("RELEASE SAVEPOINT bulk_row")
+                    inserted += 1
+                except Exception as exc:
+                    cur.execute("ROLLBACK TO SAVEPOINT bulk_row")
+                    cur.execute("RELEASE SAVEPOINT bulk_row")
+                    errors.append(f"Riga {row_num}: {exc}")
+
+    return inserted, errors
 
 
 
