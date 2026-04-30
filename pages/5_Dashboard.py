@@ -5,6 +5,7 @@ from datetime import date, timedelta
 import io
 import numpy as np
 
+import auth
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -18,6 +19,8 @@ init_db()
 
 st.set_page_config(page_title="Dashboard", page_icon="📈", layout="wide")
 st.title("📈 Dashboard")
+
+auth.require_admin()
 
 # ── load data ─────────────────────────────────────────────────────────────────
 
@@ -198,7 +201,7 @@ with tab3:
     else:
         skill_counts: dict[str, int] = {}
         for _, r in risorse_df.iterrows():
-            competenze = r["competenze"] if isinstance(r["competenze"], list) else []
+            competenze = r["competenze"] if isinstance(r["competenze"], dict) else {}
             for s in competenze:
                 skill_counts[s] = skill_counts.get(s, 0) + 1
 
