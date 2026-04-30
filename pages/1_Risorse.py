@@ -101,8 +101,8 @@ def _form_risorsa(prefill: dict | None = None):
                     st.selectbox(
                         f"↳ {skill}",
                         options=list(EXPERTISE_LEVELS.keys()),
-                        format_func=lambda v: EXPERTISE_LEVELS[v],
-                        index=cur_level,
+                        format_func=lambda v, _lv=EXPERTISE_LEVELS: _lv[v],
+                        index=st.session_state.get(f"expertise_{skill}", 0),
                         key=f"expertise_{skill}",
                     )
 
@@ -113,43 +113,9 @@ def _form_risorsa(prefill: dict | None = None):
             "Costo giornaliero marginato (€)", min_value=0.0, step=50.0, key="f_costo_marg",
         )
         st.checkbox("Risorsa attiva", key="f_attivo")
-        
+
         if st.button("💾 Salva", type="primary", use_container_width=True):
             nome_val = st.session_state.get("f_nome", "").strip()
-            cognome_val = st.session_state.get("f_cognome", "").strip()
-            if not nome_val or not cognome_val:
-                st.error("Nome e Cognome sono obbligatori.")
-            else:
-                competenze_dict: dict[str, int] = {}
-                for cat in ESCO_SKILLS:
-                    for skill in st.session_state.get(f"skill_{cat}", []):
-                        if skill not in competenze_dict:
-                            competenze_dict[skill] = st.session_state.get(f"expertise_{skill}", 0)
-                            
-                record = {
-                    "nome": nome_val,
-                    "cognome": cognome_val,
-                    "seniority": st.session_state.get("f_seniority", SENIORITY_LEVELS[1]),
-                    "line_manager": st.session_state.get("f_line_manager", ""),
-                    "competenze": competenze_dict,
-                    "costo_giornaliero": st.session_state.get("f_costo_std", 0.0),
-                    "costo_marginato": st.session_state.get("f_costo_marg", 0.0),
-                    "attivo": int(st.session_state.get("f_attivo", True)),
-                }
-                if is_edit:
-                    record["id"] = prefill["id"]
-                db.upsert_risorsa(record)
-                st.success("Risorsa salvata!")
-                _refresh()
-                
-        if is_edit:
-            if st.button("🗑️ Elimina risorsa", type="secondary", use_container_width=True):
-                db.delete_risorsa(prefill["id"])
-                st.success("Risorsa eliminata.")
-                _refresh()
-            if st.button("✖ Annulla", use_container_width=True):
-                _refresh()
-
 
 # ── decide quale form mostrare ────────────────────────────────────────────────
 
