@@ -3,6 +3,7 @@
 import io
 from datetime import date
 
+import auth
 import pandas as pd
 import streamlit as st
 
@@ -29,6 +30,7 @@ def _fmt_sheet(writer: pd.ExcelWriter, sheet_name: str, df: pd.DataFrame) -> Non
 
 st.set_page_config(page_title="Import / Export", page_icon="⬆️", layout="wide")
 st.title("⬆️ Import / Export")
+auth.require_admin()
 
 tab_import, tab_export, tab_template = st.tabs(
     ["📥 Upload Excel", "📤 Download Excel", "📋 Template Excel"]
@@ -142,7 +144,9 @@ with tab_export:
         # flatten competenze
         if not risorse_df.empty:
             risorse_df["competenze"] = risorse_df["competenze"].apply(
-                lambda c: "; ".join(c) if isinstance(c, list) else c
+                lambda c: "; ".join(
+                    f"{s} ({v})" for s, v in c.items()
+                ) if isinstance(c, dict) else ("; ".join(c) if isinstance(c, list) else c)
             )
 
         output = io.BytesIO()
