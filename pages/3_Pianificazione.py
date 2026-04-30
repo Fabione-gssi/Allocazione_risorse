@@ -111,7 +111,7 @@ if search_btn or st.session_state.get("last_search"):
             continue
 
         # filtro competenze: deve avere almeno una delle competenze richieste
-        competenze = r["competenze"] if isinstance(r["competenze"], list) else []
+        competenze = r["competenze"] if isinstance(r["competenze"], dict) else {}
         if s_skills and not any(sk in competenze for sk in s_skills):
             continue
 
@@ -122,7 +122,7 @@ if search_btn or st.session_state.get("last_search"):
         if available < s_fte:
             continue
 
-        skill_match = [sk for sk in s_skills if sk in competenze] if s_skills else []
+        skill_match = [sk for sk in s_skills if sk in competenze] if s_skills else list(competenze.keys())
         results.append(
             {
                 "id": r["id"],
