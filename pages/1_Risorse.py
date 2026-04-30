@@ -74,46 +74,30 @@ def _form_risorsa(prefill: dict | None = None):
 
     with st.sidebar:
         st.subheader("✏️ Modifica risorsa" if is_edit else "➕ Nuova risorsa")
-        with st.form("form_risorsa", clear_on_submit=False):
-            nome = st.text_input(
-                "Nome *",
-                key="f_nome",
-                value="" if not is_edit else st.session_state.get("f_nome", ""),
-            )
-            cognome = st.text_input(
-                "Cognome *",
-                key="f_cognome",
-                value="" if not is_edit else st.session_state.get("f_cognome", ""),
-            )
+        st.text_input("Nome *", key="f_nome")
+        st.text_input("Cognome *", key="f_cognome")
+        
+        seniority_idx = 1
+        cur_seniority = st.session_state.get("f_seniority", SENIORITY_LEVELS[1])
+        if cur_seniority in SENIORITY_LEVELS:
+            seniority_idx = SENIORITY_LEVELS.index(cur_seniority)
+        st.selectbox("Seniority *", SENIORITY_LEVELS, index=seniority_idx, key="f_seniority")
 
-            seniority_idx = 1
-            cur_seniority = st.session_state.get("f_seniority", SENIORITY_LEVELS[1])
-            if cur_seniority in SENIORITY_LEVELS:
-                seniority_idx = SENIORITY_LEVELS.index(cur_seniority)
-            seniority = st.selectbox(
-                "Seniority *",
-                SENIORITY_LEVELS,
-                index=seniority_idx,
-                key="f_seniority",
-            )
+        lm_idx = lm_options.index(current_lm) if current_lm in lm_options else 0
+        st.selectbox("Line Manager", lm_options, index=lm_idx, key="f_line_manager")
 
-            lm_idx = lm_options.index(current_lm) if current_lm in lm_options else 0
-            line_manager = st.selectbox(
-                "Line Manager",
-                lm_options,
-                index=lm_idx,
-                key="f_line_manager",
-            )
-
-            st.markdown("**Competenze ESCO**")
-            for category, skills in ESCO_SKILLS.items():
+        st.markdown("**Competenze ESCO**")
+        for category, skills in ESCO_SKILLS.items():
+            n_sel = len(st.session_state.get(f"skill_{category}", []))
+            label = f"{category} ({n_sel} selezionate)" if n_sel else category
+            with st.expander(label, expanded=n_sel > 0):
                 st.multiselect(
-                    category,
+                    "Seleziona competenze",
                     options=skills,
                     key=f"skill_{category}",
+                    label_visibility="collapsed",
                 )
                 for skill in st.session_state.get(f"skill_{category}", []):
-                    cur_level = st.session_state.get(f"expertise_{skill}", 0)
                     st.selectbox(
                         f"↳ {skill}",
                         options=list(EXPERTISE_LEVELS.keys()),
@@ -122,61 +106,48 @@ def _form_risorsa(prefill: dict | None = None):
                         key=f"expertise_{skill}",
                     )
 
-            costo_std = st.number_input(
-                "Costo giornaliero standard (€)",
-                min_value=0.0,
-                step=50.0,
-                value=st.session_state.get("f_costo_std", 0.0) if is_edit else 0.0,
-                key="f_costo_std",
-            )
-            costo_marg = st.number_input(
-                "Costo giornaliero marginato (€)",
-                min_value=0.0,
-                step=50.0,
-                value=st.session_state.get("f_costo_marg", 0.0) if is_edit else 0.0,
-                key="f_costo_marg",
-            )
-            attivo = st.checkbox(
-                "Risorsa attiva",
-                value=st.session_state.get("f_attivo", True) if is_edit else True,
-                key="f_attivo",
-            )
-
-            submitted = st.form_submit_button("💾 Salva")
-            if submitted:
-                nome_val = st.session_state.get("f_nome", "").strip()
-                cognome_val = st.session_state.get("f_cognome", "").strip()
-                if not nome_val or not cognome_val:
-                    st.error("Nome e Cognome sono obbligatori.")
-                else:
-                    competenze_dict: dict[str, int] = {}
-                    for cat in ESCO_SKILLS:
-                        for skill in st.session_state.get(f"skill_{cat}", []):
-                            if skill not in competenze_dict:
-                                competenze_dict[skill] = st.session_state.get(f"expertise_{skill}", 0)
-
-                    record = {
-                        "nome": nome_val,
-                        "cognome": cognome_val,
-                        "seniority": st.session_state.get("f_seniority", SENIORITY_LEVELS[1]),
-                        "line_manager": st.session_state.get("f_line_manager", ""),
-                        "competenze": competenze_dict,
-                        "costo_giornaliero": st.session_state.get("f_costo_std", 0.0),
-                        "costo_marginato": st.session_state.get("f_costo_marg", 0.0),
-                        "attivo": int(st.session_state.get("f_attivo", True)),
-                    }
-                    if is_edit:
-                        record["id"] = prefill["id"]
-                    db.upsert_risorsa(record)
-                    st.success("Risorsa salvata!")
-                    _refresh()
-
+        st.number_input(
+            "Costo giornaliero standard (€)", min_value=0.0, step=50.0, key="f_costo_std",
+        )
+        st.number_input(
+            "Costo giornaliero marginato (€)", min_value=0.0, step=50.0, key="f_costo_marg",
+        )
+        st.checkbox("Risorsa attiva", key="f_attivo")
+        
+        if st.button("💾 Salva", type="primary", use_container_width=True):
+            nome_val = st.session_state.get("f_nome", "").strip()
+            cognome_val = st.session_state.get("f_cognome", "").strip()
+            if not nome_val or not cognome_val:
+                st.error("Nome e Cognome sono obbligatori.")
+            else:
+                competenze_dict: dict[str, int] = {}
+                for cat in ESCO_SKILLS:
+                    for skill in st.session_state.get(f"skill_{cat}", []):
+                        if skill not in competenze_dict:
+                            competenze_dict[skill] = st.session_state.get(f"expertise_{skill}", 0)
+                            
+                record = {
+                    "nome": nome_val,
+                    "cognome": cognome_val,
+                    "seniority": st.session_state.get("f_seniority", SENIORITY_LEVELS[1]),
+                    "line_manager": st.session_state.get("f_line_manager", ""),
+                    "competenze": competenze_dict,
+                    "costo_giornaliero": st.session_state.get("f_costo_std", 0.0),
+                    "costo_marginato": st.session_state.get("f_costo_marg", 0.0),
+                    "attivo": int(st.session_state.get("f_attivo", True)),
+                }
+                if is_edit:
+                    record["id"] = prefill["id"]
+                db.upsert_risorsa(record)
+                st.success("Risorsa salvata!")
+                _refresh()
+                
         if is_edit:
-            if st.button("🗑️ Elimina risorsa", type="secondary"):
+            if st.button("🗑️ Elimina risorsa", type="secondary", use_container_width=True):
                 db.delete_risorsa(prefill["id"])
                 st.success("Risorsa eliminata.")
                 _refresh()
-            if st.button("✖ Annulla"):
+            if st.button("✖ Annulla", use_container_width=True):
                 _refresh()
 
 
