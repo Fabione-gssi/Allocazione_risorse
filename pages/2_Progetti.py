@@ -4,6 +4,7 @@ from datetime import date
 
 import streamlit as st
 
+import auth
 import database as db
 from database import init_db
 from esco_skills import PROJECT_STATUS_OPTIONS
@@ -13,6 +14,7 @@ init_db()
 st.set_page_config(page_title="Progetti", page_icon="📁", layout="wide")
 st.title("📁 Gestione Progetti")
 
+auth.require_admin()
 
 def _refresh():
     st.session_state.pop("edit_progetto_id", None)
