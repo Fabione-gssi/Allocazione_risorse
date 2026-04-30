@@ -2,7 +2,6 @@
 
 import streamlit as st
 
-import auth
 import database as db
 from database import init_db
 from esco_skills import ESCO_SKILLS, SENIORITY_LEVELS, all_skills_flat
@@ -11,8 +10,6 @@ init_db()
 
 st.set_page_config(page_title="Risorse", page_icon="👤", layout="wide")
 st.title("👤 Anagrafica Risorse")
-
-auth.require_admin()
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
