@@ -4,7 +4,7 @@ import streamlit as st
 
 import database as db
 from database import init_db
-from esco_skills import ESCO_SKILLS, SENIORITY_LEVELS, all_skills_flat
+from esco_skills import ESCO_SKILLS, EXPERTISE_LEVELS, SENIORITY_LEVELS, all_skills_flat
 
 init_db()
 
@@ -17,8 +17,10 @@ def _clear_form_state():
     """Rimuove dal session state tutti i valori pre-caricati del form."""
     st.session_state.pop("edit_risorsa_id", None)
     st.session_state.pop("_prefill_loaded_id", None)
-    for category in ESCO_SKILLS:
+    for category, skills in ESCO_SKILLS.items():
         st.session_state.pop(f"skill_{category}", None)
+        for skill in skills:
+            st.session_state.pop(f"expertise_{skill}", None)
     for key in ("f_nome", "f_cognome", "f_seniority", "f_line_manager",
                 "f_costo_std", "f_costo_marg", "f_attivo"):
         st.session_state.pop(key, None)
@@ -33,9 +35,14 @@ def _prefill_session_state(risorsa: dict):
     """Scrive i valori della risorsa nel session state prima del render del form."""
     if st.session_state.get("_prefill_loaded_id") == risorsa["id"]:
         return  # già caricato, non sovrascrivere le modifiche dell'utente
-    competenze = risorsa.get("competenze") or []
+    competenze = risorsa.get("competenze") or {}
+    if isinstance(competenze, list):
+        competenze = {s: 0 for s in competenze}
     for category, skills in ESCO_SKILLS.items():
-        st.session_state[f"skill_{category}"] = [s for s in competenze if s in skills]
+        selected = [s for s in skills if s in competenze]
+        st.session_state[f"skill_{category}"] = selected
+        for skill in selected:
+            st.session_state[f"expertise_{skill}"] = competenze.get(skill, 0)
     st.session_state["f_nome"] = risorsa.get("nome", "")
     st.session_state["f_cognome"] = risorsa.get("cognome", "")
     st.session_state["f_seniority"] = risorsa.get("seniority", SENIORITY_LEVELS[1])
@@ -105,6 +112,15 @@ def _form_risorsa(prefill: dict | None = None):
                     options=skills,
                     key=f"skill_{category}",
                 )
+                for skill in st.session_state.get(f"skill_{category}", []):
+                    cur_level = st.session_state.get(f"expertise_{skill}", 0)
+                    st.selectbox(
+                        f"↳ {skill}",
+                        options=list(EXPERTISE_LEVELS.keys()),
+                        format_func=lambda v: EXPERTISE_LEVELS[v],
+                        index=cur_level,
+                        key=f"expertise_{skill}",
+                    )
 
             costo_std = st.number_input(
                 "Costo giornaliero standard (€)",
@@ -133,16 +149,18 @@ def _form_risorsa(prefill: dict | None = None):
                 if not nome_val or not cognome_val:
                     st.error("Nome e Cognome sono obbligatori.")
                 else:
-                    all_sel: list[str] = []
+                    competenze_dict: dict[str, int] = {}
                     for cat in ESCO_SKILLS:
-                        all_sel.extend(st.session_state.get(f"skill_{cat}", []))
+                        for skill in st.session_state.get(f"skill_{cat}", []):
+                            if skill not in competenze_dict:
+                                competenze_dict[skill] = st.session_state.get(f"expertise_{skill}", 0)
 
                     record = {
                         "nome": nome_val,
                         "cognome": cognome_val,
                         "seniority": st.session_state.get("f_seniority", SENIORITY_LEVELS[1]),
                         "line_manager": st.session_state.get("f_line_manager", ""),
-                        "competenze": list(dict.fromkeys(all_sel)),
+                        "competenze": competenze_dict,
                         "costo_giornaliero": st.session_state.get("f_costo_std", 0.0),
                         "costo_marginato": st.session_state.get("f_costo_marg", 0.0),
                         "attivo": int(st.session_state.get("f_attivo", True)),
@@ -203,7 +221,15 @@ if not risorse.empty:
         risorse = risorse[risorse["competenze"].apply(lambda c: filter_skill in c)]
 
     display = risorse.copy()
-    display["competenze"] = display["competenze"].apply(lambda c: ", ".join(c))
+    def _fmt_competenze(c):
+        if isinstance(c, dict):
+            return ", ".join(
+                f"{s} ({EXPERTISE_LEVELS.get(v, v)})" if v else s
+                for s, v in c.items()
+            )
+        return ", ".join(c) if isinstance(c, list) else str(c)
+
+    display["competenze"] = display["competenze"].apply(_fmt_competenze)
     display["attivo"] = display["attivo"].map({1: "✅", 0: "❌"})
     display = display.rename(columns={
         "id": "ID", "nome": "Nome", "cognome": "Cognome",
