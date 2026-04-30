@@ -5,6 +5,7 @@ from datetime import date, timedelta
 import numpy as np
 import pandas as pd
 import streamlit as st
+import auth
 
 import database as db
 from database import init_db
@@ -15,6 +16,7 @@ init_db()
 st.set_page_config(page_title="Allocazioni", page_icon="🔗", layout="wide")
 st.title("🔗 Allocazioni Risorse ↔ Progetti")
 
+auth.require_admin()
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
