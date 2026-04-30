@@ -2,6 +2,7 @@
 
 import streamlit as st
 
+import auth
 import database as db
 
 st.set_page_config(
@@ -10,6 +11,8 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+auth.require_any_auth()
 
 db.init_db()
 
@@ -58,8 +61,8 @@ st.markdown(
 
 | Pagina | Descrizione |
 |--------|-------------|
-| 👤 **Risorse** | Anagrafica risorse, seniority, competenze ESCO, costi |
-| 📁 **Progetti** | Codici, referenti, date, stato |
+| 👤 **Risorse** | Anagrafica risorse, seniority, competenze ESCO con livelli di expertise, email, data assunzione |
+| 📁 **Progetti** | Codici, tipo progetto, referenti, date, stato |
 | 🔗 **Allocazioni** | Assegnazione risorse ↔ progetti con periodo e % FTE |
 | 🔍 **Pianificazione** | Ricerca risorse disponibili per competenza, FTE, seniority |
 | 📈 **Dashboard** | Gantt, disponibilità mensile, copertura competenze, costi |
