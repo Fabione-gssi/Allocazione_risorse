@@ -63,8 +63,8 @@ st.markdown(
 |--------|-------------|
 | 👤 **Risorse** | Anagrafica risorse, seniority, competenze ESCO con livelli di expertise, email, data assunzione |
 | 📁 **Progetti** | Codici, tipo progetto, referenti, date, stato |
-| 🔗 **Allocazioni** | Assegnazione risorse ↔ progetti con periodo e % FTE |
 | 🔍 **Pianificazione** | Ricerca risorse disponibili per competenza, FTE, seniority |
+| 🔗 **Allocazioni** | Assegnazione risorse ↔ progetti con periodo e % FTE |
 | 📈 **Dashboard** | Gantt, disponibilità mensile, copertura competenze, costi |
 | ⬆️ **Import / Export** | Upload Excel in blocco, download report |
 """
