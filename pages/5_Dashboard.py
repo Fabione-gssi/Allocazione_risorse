@@ -62,6 +62,7 @@ with tab1:
         filter_stati = st.multiselect(
             "Filtra per stato",
             progetti_df["stato"].unique().tolist(),
+            default=progetti_df["stato"].unique().tolist(),
             key="gantt_stati",
         )
         gantt_df = progetti_df[progetti_df["stato"].isin(filter_stati)].copy()
