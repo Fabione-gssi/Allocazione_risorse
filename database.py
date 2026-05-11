@@ -112,6 +112,9 @@ def init_db() -> None:
                 "ALTER TABLE risorse ADD COLUMN IF NOT EXISTS email TEXT DEFAULT ''",
                 "ALTER TABLE risorse ADD COLUMN IF NOT EXISTS data_assunzione TEXT DEFAULT ''",
                 "ALTER TABLE progetti ADD COLUMN IF NOT EXISTS tipo_progetto TEXT DEFAULT ''",
+                "ALTER TABLE progetti ADD COLUMN IF NOT EXISTS cliente TEXT DEFAULT ''",
+                "ALTER TABLE progetti ADD COLUMN IF NOT EXISTS margine REAL DEFAULT 0.0",
+                "ALTER TABLE progetti ADD COLUMN IF NOT EXISTS ricavo_fisso REAL DEFAULT 0.0"
             ]:
                 cur.execute(col_def)
 
